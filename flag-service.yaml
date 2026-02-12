@@ -1,0 +1,122 @@
+# ==============================================================================
+# FLAG SERVICE - TEMPLATE
+# ==============================================================================
+# IMPORTANTE: Este é um template simplificado
+# Adapte conforme necessário para seu serviço específico
+# ==============================================================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: togglemaster-config
+  namespace: togglemaster-flag
+  labels:
+    app.kubernetes.io/name: flag-service
+    app.kubernetes.io/component: flag
+    app.kubernetes.io/part-of: togglemaster
+data:
+  FLAG_DB_HOST: "${RDS_FLAG_ENDPOINT}"
+  FLAG_DB_NAME: "${FLAG_DB_NAME}"
+  FLAG_DB_PORT: "${DB_PORT}"
+  AUTH_SERVICE_URL: "${AUTH_SERVICE_URL}"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flag-service
+  namespace: togglemaster-flag
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flag-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flag-service
+    spec:
+      containers:
+        - name: flag-service
+          image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/flag-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8002
+          env:
+            - name: PORT
+              value: "8002"
+            - name: APP_ENV
+              value: "production"
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: togglemaster-config
+                  key: FLAG_DB_HOST
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: togglemaster-config
+                  key: FLAG_DB_NAME
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: togglemaster-config
+                  key: FLAG_DB_PORT
+            - name: AUTH_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: togglemaster-config
+                  key: AUTH_SERVICE_URL
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: flag-service-rds
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: flag-service-rds
+                  key: password
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: flag-service
+  namespace: togglemaster-flag
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: flag-service
+  ports:
+    - port: 8002
+      targetPort: 8002
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flag-service-ingress
+  namespace: togglemaster-flag
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: ${DOMAIN_NAME}
+      http:
+        paths:
+          - path: /flags(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: flag-service
+                port:
+                  number: 8002
