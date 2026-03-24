@@ -23,7 +23,7 @@ permissions:
 env:
   PYTHON_VERSION: "3.11"
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: flag-service
+  ECR_REPOSITORY: togglemaster/${{ github.event.repository.name }}
   IMAGE_TAG: ${{ github.sha }}
 
 jobs:
