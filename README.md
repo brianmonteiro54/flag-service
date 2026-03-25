@@ -4,6 +4,75 @@ Este é o serviço de CRUD (Create, Read, Update, Delete) do projeto ToggleMaste
 
 **IMPORTANTE:** Este serviço é protegido e depende que o `auth-service` esteja rodando. Todas as requisições (exceto `/health`) exigem um header `Authorization: Bearer <sua-chave-api>`.
 
+## Tecnologias
+ 
+| Componente | Tecnologia |
+|---|---|
+| Linguagem | Python 3.11 |
+| Framework | Flask + Gunicorn |
+| Banco de Dados | PostgreSQL (RDS) |
+| Container | Docker (multi-stage build) |
+| Orquestração | Kubernetes (EKS) |
+| Registry | Amazon ECR |
+| CI/CD | GitHub Actions + ArgoCD (GitOps) |
+ 
+## Endpoints
+ 
+| Método | Rota | Descrição |
+|---|---|---|
+| `GET` | `/health` | Health check do serviço |
+| `POST` | `/flags` | Cria uma nova feature flag |
+| `GET` | `/flags` | Lista todas as flags |
+| `GET` | `/flags/<id>` | Retorna uma flag específica |
+| `PUT` | `/flags/<id>` | Atualiza uma flag |
+| `DELETE` | `/flags/<id>` | Remove uma flag |
+ 
+## Variáveis de Ambiente
+ 
+| Variável | Descrição |
+|---|---|
+| `DATABASE_URL` | String de conexão PostgreSQL |
+| `AUTH_SERVICE_URL` | URL do Auth Service para validação de API Keys |
+ 
+## Pipeline CI/CD (DevSecOps)
+ 
+O workflow do GitHub Actions executa os seguintes estágios:
+ 
+1. **Build & Unit Test** — Instalação de dependências e execução dos testes com `pytest`
+2. **Linter** — Análise estática com `flake8`
+3. **Security Scan** — SAST com `bandit` + SCA com `Trivy` (bloqueia vulnerabilidades críticas)
+4. **Docker Build & Push** — Build da imagem, scan com Trivy e push para o ECR
+5. **GitOps Update** — Atualiza a tag da imagem no repositório `deploy-flag-service`
+ 
+## Deploy (GitOps)
+ 
+O deploy segue o modelo GitOps com ArgoCD. Ao final do pipeline de CI, a tag da imagem é atualizada automaticamente no repositório [`deploy-flag-service`](https://github.com/brianmonteiro54/deploy-flag-service), e o ArgoCD sincroniza a mudança no cluster EKS.
+ 
+## Executando Localmente
+ 
+```bash
+# Configurar variáveis
+cp .env.example .env
+ 
+# Instalar dependências
+pip install -r requirements.txt
+ 
+# Rodar
+python app.py
+```
+ 
+## Estrutura do Projeto
+ 
+```
+├── .github/workflows/ci.yaml   # Pipeline CI/CD
+├── db/init.sql                  # Script de inicialização do banco
+├── tests/test_app.py            # Testes unitários
+├── Dockerfile                   # Build multi-stage (Python)
+├── app.py                       # Aplicação Flask
+├── requirements.txt             # Dependências Python
+└── README.md
+```
+
 ## 📦 Pré-requisitos (Local)
 
 * [Python](https://www.python.org/) (versão 3.9 ou superior)
