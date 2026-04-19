@@ -69,7 +69,6 @@ jobs:
             --cov-report=xml:coverage.xml \
             --cov-fail-under=80
 
-      # Mantém o relatório disponível na aba "Summary" do GitHub Actions
       - name: Publicar relatório de cobertura
         if: always()
         uses: actions/upload-artifact@v4
@@ -79,7 +78,7 @@ jobs:
           retention-days: 7
 
 # ─────────────────────────────────────────────
-# JOB 2 — Lint  (bloqueia a pipeline se falhar)
+# JOB 2 — Lint
 # ─────────────────────────────────────────────
   lint:
     name: Lint and Static Analysis
@@ -107,7 +106,7 @@ jobs:
           flake8 . --exclude=.venv,__pycache__,.pytest_cache,htmlcov
 
 # ─────────────────────────────────────────────
-# JOB 3 — Segurança  (bloqueia em HIGH/CRITICAL)
+# JOB 3 — Segurança
 # ─────────────────────────────────────────────
   security-scan:
     name: Security Scan
@@ -129,13 +128,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install bandit
+
       - name: Rodar Bandit
         run: |
           bandit -r . \
             -x ./.venv,./tests,./__pycache__,./.pytest_cache \
             --severity-level high
 
-      - name: Scan de filesystem com Trivy
+      - name: Scan de filesystem com Trivy (SARIF)
         if: always()
         uses: aquasecurity/trivy-action@master
         with:
@@ -146,6 +146,17 @@ jobs:
           format: sarif
           output: trivy-fs-results.sarif
 
+      - name: Scan de filesystem com Trivy (table legível)
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          output: trivy-fs-results.txt
+
       - name: Upload resultado Trivy para GitHub Security
         if: always() && hashFiles('trivy-fs-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
@@ -153,11 +164,18 @@ jobs:
           sarif_file: trivy-fs-results.sarif
           category: trivy-filesystem
 
+      - name: Upload Trivy filesystem reports (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-fs-report-${{ github.run_number }}
+          path: |
+            trivy-fs-results.sarif
+            trivy-fs-results.txt
+          retention-days: 30
+
 # ─────────────────────────────────────────────
 # JOB 4 — Docker build + scan da imagem
-#          A imagem buildada aqui é exportada
-#          como artefato para o job de push,
-#          evitando rebuild desnecessário.
 # ─────────────────────────────────────────────
   docker-build:
     name: Docker Build and Image Scan
@@ -168,7 +186,6 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      # Cache de camadas Docker entre execuções
       - name: Configurar cache Docker (Buildx)
         uses: docker/setup-buildx-action@v3
 
@@ -177,17 +194,27 @@ jobs:
         with:
           context: .
           tags: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-          # Exporta a imagem para o Docker daemon local
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Scan da imagem com Trivy
+      - name: Scan da imagem com Trivy (SARIF)
+        if: always()
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           format: sarif
           output: trivy-image-results.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+      - name: Scan da imagem com Trivy (table legível)
+        if: always()
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          format: table
+          output: trivy-image-results.txt
           severity: HIGH,CRITICAL
           ignore-unfixed: true
 
@@ -198,9 +225,18 @@ jobs:
           sarif_file: trivy-image-results.sarif
           category: trivy-image
 
+      - name: Upload Trivy image reports (artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-image-report-${{ github.run_number }}
+          path: |
+            trivy-image-results.sarif
+            trivy-image-results.txt
+          retention-days: 30
+
 # ─────────────────────────────────────────────
 # JOB 5 — Push para ECR + GitOps deploy
-#          Só executa em push/dispatch na main
 # ─────────────────────────────────────────────
   docker-push:
     name: Push Image to Amazon ECR
@@ -240,7 +276,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # ─── GitOps: atualiza manifesto de deploy ───
       - name: Atualizar imagem no repositório de deploy
         env:
           FULL_IMAGE: "${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
