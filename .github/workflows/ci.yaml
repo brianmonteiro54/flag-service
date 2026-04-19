@@ -60,7 +60,7 @@ jobs:
       - name: Rodar testes com cobertura
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/testdb
-          AUTH_SERVICE_URL: http://flag-service
+          AUTH_SERVICE_URL: http://auth-service
           PYTHONPATH: .
         run: |
           pytest \
