@@ -22,6 +22,7 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.11"
+  TRIVY_VERSION: "v0.70.0"
   AWS_REGION: us-east-1
   ECR_REPOSITORY: togglemaster/${{ github.event.repository.name }}
   IMAGE_TAG: ${{ github.sha }}
@@ -137,8 +138,9 @@ jobs:
 
       - name: Scan de filesystem com Trivy (SARIF)
         if: always()
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
+          version: ${{ env.TRIVY_VERSION }}
           scan-type: fs
           scan-ref: .
           severity: HIGH,CRITICAL
@@ -148,8 +150,9 @@ jobs:
 
       - name: Scan de filesystem com Trivy (table legível)
         if: always()
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
+          version: ${{ env.TRIVY_VERSION }}
           scan-type: fs
           scan-ref: .
           severity: HIGH,CRITICAL
@@ -159,7 +162,7 @@ jobs:
 
       - name: Upload resultado Trivy para GitHub Security
         if: always() && hashFiles('trivy-fs-results.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-fs-results.sarif
           category: trivy-filesystem
@@ -200,8 +203,9 @@ jobs:
 
       - name: Scan da imagem com Trivy (SARIF)
         if: always()
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
+          version: ${{ env.TRIVY_VERSION }}
           image-ref: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           format: sarif
           output: trivy-image-results.sarif
@@ -210,8 +214,9 @@ jobs:
 
       - name: Scan da imagem com Trivy (table legível)
         if: always()
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
+          version: ${{ env.TRIVY_VERSION }}
           image-ref: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           format: table
           output: trivy-image-results.txt
@@ -220,7 +225,7 @@ jobs:
 
       - name: Upload resultado Trivy para GitHub Security
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-image-results.sarif
           category: trivy-image
@@ -276,36 +281,29 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Atualizar imagem no repositório de deploy
-        env:
-          FULL_IMAGE: "${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
-          DEPLOY_TOKEN: ${{ secrets.DEPLOY_REPO_TOKEN }}
-          REPO_OWNER: ${{ github.repository_owner }}
-          SHORT_SHA: ${{ github.sha }}
+      - name: Atualizar imagem no repo de deploy
         run: |
-          set -euo pipefail
+          FULL_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+          git clone https://x-access-token:${{ secrets.DEPLOY_REPO_TOKEN }}@github.com/${{ github.repository_owner }}/deploy-${{ github.event.repository.name }}.git deploy-repo
 
-          git clone "https://x-access-token:${DEPLOY_TOKEN}@github.com/${REPO_OWNER}/deploy-flag-service.git" deploy-repo
           cd deploy-repo
 
-          MANIFEST="manifests/deployment.yaml"
-
           echo "=== ANTES ==="
-          grep "image:" "${MANIFEST}" || true
+          grep "image:" manifests/deployment.yaml || true
 
-          sed -i "s|image:.*${{ github.event.repository.name }}:.*|image: ${FULL_IMAGE}|" "${MANIFEST}"
+          sed -i "s|image:.*${{ github.event.repository.name }}:.*|image: ${FULL_IMAGE}|" manifests/deployment.yaml
 
           echo "=== DEPOIS ==="
-          grep "image:" "${MANIFEST}" || true
+          grep "image:" manifests/deployment.yaml || true
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "${MANIFEST}"
+          git add manifests/deployment.yaml
 
           if git diff --cached --quiet; then
             echo "::warning::Nenhuma alteração detectada no manifesto — a imagem já estava atualizada."
             exit 0
           fi
 
-          git commit -m "deploy: ${{ github.event.repository.name }} ${SHORT_SHA:0:8}"
+          git commit -m "deploy: ${{ github.event.repository.name }} ${GITHUB_SHA::8}"
           git push origin main
