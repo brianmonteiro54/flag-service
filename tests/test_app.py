@@ -270,10 +270,11 @@ def test_update_flag_no_fields(client, app_module, monkeypatch):
     )
 
     assert response.status_code == 400
-    assert response.get_json() == {
-        "error": "Pelo menos um campo "
-                  "('description', 'is_enabled') é obrigatório"
-    }
+    expected_err = (
+        "Pelo menos um campo "
+        "('description', 'is_enabled') é obrigatório"
+    )
+    assert response.get_json() == {"error": expected_err}
 
 
 def test_update_flag_success(client, app_module, monkeypatch):
