@@ -102,7 +102,6 @@ jobs:
           pip install -r requirements.txt
           pip install flake8
 
-      # ✅ Removido continue-on-error — falha de lint agora bloqueia a pipeline
       - name: Rodar flake8
         run: |
           flake8 . --exclude=.venv,__pycache__,.pytest_cache,htmlcov
