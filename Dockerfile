@@ -20,9 +20,12 @@ COPY requirements.txt .
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Instala dependências Python
+# Instala dependências Python (incluindo OTel)
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
+
+# Instala auto-instrumentação OTel (baixa instrumentações automaticamente)
+RUN opentelemetry-bootstrap -a install
 
 # =============================================================================
 # Stage 2: Final - Imagem de produção mínima
@@ -47,6 +50,16 @@ ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+# ===== Configuração OpenTelemetry via variáveis de ambiente =====
+ENV OTEL_SERVICE_NAME="flag-service" \
+    OTEL_RESOURCE_ATTRIBUTES="service.namespace=togglemaster,deployment.environment=production,service.version=1.0.0" \
+    OTEL_EXPORTER_OTLP_ENDPOINT="http://otel-collector.monitoring.svc.cluster.local:4317" \
+    OTEL_EXPORTER_OTLP_PROTOCOL="grpc" \
+    OTEL_TRACES_EXPORTER="otlp" \
+    OTEL_METRICS_EXPORTER="otlp" \
+    OTEL_LOGS_EXPORTER="otlp" \
+    OTEL_PYTHON_LOG_CORRELATION="true"
+
 # Define diretório de trabalho
 WORKDIR /app
 
@@ -64,5 +77,5 @@ EXPOSE 8002
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8002/health || exit 1
 
-# Comando para executar a aplicação com Gunicorn
-CMD ["gunicorn", "--bind", "0.0.0.0:8002", "--workers", "4", "--timeout", "60", "app:app"]
+# Comando: usa opentelemetry-instrument para auto-instrumentar o gunicorn
+CMD ["opentelemetry-instrument", "gunicorn", "--bind", "0.0.0.0:8002", "--workers", "4", "--timeout", "60", "app:app"]
