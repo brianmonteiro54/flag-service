@@ -5,10 +5,10 @@ on:
     branches:
       - main
       - develop
-      - 'feat/**'
-      - 'feature/**'
-      - 'fix/**'
-      - 'hotfix/**'
+      - "feat/**"
+      - "feature/**"
+      - "fix/**"
+      - "hotfix/**"
   pull_request:
     branches:
       - main
@@ -26,6 +26,9 @@ env:
   ECR_REPOSITORY: togglemaster/${{ github.event.repository.name }}
   IMAGE_TAG: ${{ github.sha }}
 
+# ─────────────────────────────────────────────
+# JOB 1 — Testes e cobertura
+# ─────────────────────────────────────────────
 jobs:
   build-test:
     name: Build, Unit Tests and Coverage
@@ -60,8 +63,24 @@ jobs:
           AUTH_SERVICE_URL: http://flag-service
           PYTHONPATH: .
         run: |
-          pytest --cov=app --cov-report=term-missing --cov-fail-under=80
+          pytest \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=80
 
+      # Mantém o relatório disponível na aba "Summary" do GitHub Actions
+      - name: Publicar relatório de cobertura
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
+
+# ─────────────────────────────────────────────
+# JOB 2 — Lint  (bloqueia a pipeline se falhar)
+# ─────────────────────────────────────────────
   lint:
     name: Lint and Static Analysis
     runs-on: ubuntu-latest
@@ -83,11 +102,14 @@ jobs:
           pip install -r requirements.txt
           pip install flake8
 
+      # ✅ Removido continue-on-error — falha de lint agora bloqueia a pipeline
       - name: Rodar flake8
-        continue-on-error: true
         run: |
           flake8 . --exclude=.venv,__pycache__,.pytest_cache,htmlcov
 
+# ─────────────────────────────────────────────
+# JOB 3 — Segurança  (bloqueia em HIGH/CRITICAL)
+# ─────────────────────────────────────────────
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -108,22 +130,36 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install bandit
-
       - name: Rodar Bandit
-        continue-on-error: true
         run: |
-          bandit -r . -x ./.venv,./tests,./__pycache__,./.pytest_cache
+          bandit -r . \
+            -x ./.venv,./tests,./__pycache__,./.pytest_cache \
+            --severity-level high \
+            --exit-zero-on-skipped
 
       - name: Scan de filesystem com Trivy
-        continue-on-error: true
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
           scan-ref: .
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          format: table
+          format: sarif
+          output: trivy-fs-results.sarif
 
+      - name: Upload resultado Trivy para GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs-results.sarif
+          category: trivy-filesystem
+
+# ─────────────────────────────────────────────
+# JOB 4 — Docker build + scan da imagem
+#          A imagem buildada aqui é exportada
+#          como artefato para o job de push,
+#          evitando rebuild desnecessário.
+# ─────────────────────────────────────────────
   docker-build:
     name: Docker Build and Image Scan
     runs-on: ubuntu-latest
@@ -133,25 +169,46 @@ jobs:
       - name: Checkout do código
         uses: actions/checkout@v4
 
-      - name: Build da imagem Docker
-        run: |
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+      # Cache de camadas Docker entre execuções
+      - name: Configurar cache Docker (Buildx)
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build da imagem Docker (com cache)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          tags: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          # Exporta a imagem para o Docker daemon local
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Scan da imagem com Trivy
-        continue-on-error: true
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-          format: table
+          format: sarif
+          output: trivy-image-results.sarif
           severity: HIGH,CRITICAL
           ignore-unfixed: true
 
+      - name: Upload resultado Trivy para GitHub Security
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image-results.sarif
+          category: trivy-image
+
+# ─────────────────────────────────────────────
+# JOB 5 — Push para ECR + GitOps deploy
+#          Só executa em push/dispatch na main
+# ─────────────────────────────────────────────
   docker-push:
     name: Push Image to Amazon ECR
     runs-on: ubuntu-latest
     needs: docker-build
     if: |
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
       github.ref == 'refs/heads/main'
 
     steps:
@@ -170,38 +227,51 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build da imagem Docker
-        run: |
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+      - name: Configurar Buildx (reusa cache)
+        uses: docker/setup-buildx-action@v3
 
-      - name: Tag da imagem para ECR
-        run: |
-          docker tag $ECR_REPOSITORY:$IMAGE_TAG \
-            ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
+      - name: Build e push da imagem para ECR
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Push da imagem para ECR
+      # ─── GitOps: atualiza manifesto de deploy ───
+      - name: Atualizar imagem no repositório de deploy
+        env:
+          FULL_IMAGE: "${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+          DEPLOY_TOKEN: ${{ secrets.DEPLOY_REPO_TOKEN }}
+          REPO_OWNER: ${{ github.repository_owner }}
+          SHORT_SHA: ${{ github.sha }}
         run: |
-          docker push ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
-      
+          set -euo pipefail
 
-      - name: Atualizar imagem no repo de deploy
-        run: |
-          FULL_IMAGE="${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
-
-          git clone https://x-access-token:${{ secrets.DEPLOY_REPO_TOKEN }}@github.com/${{ github.repository_owner }}/deploy-flag-service.git deploy-repo
+          git clone "https://x-access-token:${DEPLOY_TOKEN}@github.com/${REPO_OWNER}/deploy-flag-service.git" deploy-repo
           cd deploy-repo
 
-          echo "=== ANTES ==="
-          grep "image:.*flag-service" manifests/deployment.yaml
+          MANIFEST="manifests/deployment.yaml"
 
-          sed -i "s|image:.*flag-service:.*|image: ${FULL_IMAGE}|" manifests/deployment.yaml
+          echo "=== ANTES ==="
+          grep "image:" "${MANIFEST}" || true
+
+          sed -i "s|image:.*${{ github.event.repository.name }}:.*|image: ${FULL_IMAGE}|" "${MANIFEST}"
 
           echo "=== DEPOIS ==="
-          grep "image:.*flag-service" manifests/deployment.yaml
+          grep "image:" "${MANIFEST}" || true
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add manifests/deployment.yaml
-          git diff --cached --quiet && echo "SEM MUDANCAS - sed nao alterou nada" && exit 1
-          git commit -m "deploy: flag-service ${GITHUB_SHA::8}"
+          git add "${MANIFEST}"
+
+          if git diff --cached --quiet; then
+            echo "::warning::Nenhuma alteração detectada no manifesto — a imagem já estava atualizada."
+            exit 0
+          fi
+
+          git commit -m "deploy: ${{ github.event.repository.name }} ${SHORT_SHA:0:8}"
           git push origin main
