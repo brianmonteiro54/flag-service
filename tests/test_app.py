@@ -12,7 +12,8 @@ def app_module(monkeypatch):
     Carrega o módulo app.py com as dependências de ambiente e banco mockadas
     antes do import, evitando sys.exit() e conexão real com PostgreSQL.
     """
-    monkeypatch.setenv("DATABASE_URL", "postgresql://user:pass@localhost:5432/testdb")
+    monkeypatch.setenv(
+        "DATABASE_URL", "postgresql://user:pass@localhost:5432/testdb")
     monkeypatch.setenv("AUTH_SERVICE_URL", "http://auth-service")
 
     mock_pool = MagicMock()
@@ -27,7 +28,9 @@ def app_module(monkeypatch):
         del sys.modules["app"]
 
     import psycopg2.pool
-    monkeypatch.setattr(psycopg2.pool, "SimpleConnectionPool", lambda *args, **kwargs: mock_pool)
+    monkeypatch.setattr(
+        psycopg2.pool, "SimpleConnectionPool",
+        lambda *args, **kwargs: mock_pool)
 
     module = importlib.import_module("app")
 
@@ -47,7 +50,8 @@ def client(app_module):
 def auth_ok(monkeypatch, app_module):
     response = MagicMock()
     response.status_code = 200
-    monkeypatch.setattr(app_module.requests, "get", lambda *args, **kwargs: response)
+    monkeypatch.setattr(
+        app_module.requests, "get", lambda *args, **kwargs: response)
 
 
 # -------------------------
@@ -73,9 +77,11 @@ def test_require_auth_missing_header(client):
 def test_require_auth_invalid_key(client, app_module, monkeypatch):
     response_mock = MagicMock()
     response_mock.status_code = 401
-    monkeypatch.setattr(app_module.requests, "get", lambda *args, **kwargs: response_mock)
+    monkeypatch.setattr(
+        app_module.requests, "get", lambda *args, **kwargs: response_mock)
 
-    response = client.get("/flags", headers={"Authorization": "Bearer invalid"})
+    response = client.get(
+        "/flags", headers={"Authorization": "Bearer invalid"})
     assert response.status_code == 401
     assert response.get_json() == {"error": "Chave de API inválida"}
 
@@ -88,7 +94,8 @@ def test_require_auth_timeout(client, app_module, monkeypatch):
 
     response = client.get("/flags", headers={"Authorization": "Bearer token"})
     assert response.status_code == 504
-    assert response.get_json() == {"error": "Serviço de autenticação indisponível (timeout)"}
+    assert response.get_json() == {
+        "error": "Serviço de autenticação indisponível (timeout)"}
 
 
 def test_require_auth_request_exception(client, app_module, monkeypatch):
@@ -99,7 +106,8 @@ def test_require_auth_request_exception(client, app_module, monkeypatch):
 
     response = client.get("/flags", headers={"Authorization": "Bearer token"})
     assert response.status_code == 503
-    assert response.get_json() == {"error": "Serviço de autenticação indisponível"}
+    assert response.get_json() == {
+        "error": "Serviço de autenticação indisponível"}
 
 
 # -------------------------
@@ -216,7 +224,8 @@ def test_get_flag_success(client, app_module, monkeypatch):
     flag = {"name": "feature-x", "description": "desc", "is_enabled": True}
     app_module._mock_cursor.fetchone.return_value = flag
 
-    response = client.get("/flags/feature-x", headers={"Authorization": "Bearer token"})
+    response = client.get(
+        "/flags/feature-x", headers={"Authorization": "Bearer token"})
 
     assert response.status_code == 200
     assert response.get_json() == flag
@@ -226,7 +235,8 @@ def test_get_flag_not_found(client, app_module, monkeypatch):
     auth_ok(monkeypatch, app_module)
     app_module._mock_cursor.fetchone.return_value = None
 
-    response = client.get("/flags/inexistente", headers={"Authorization": "Bearer token"})
+    response = client.get(
+        "/flags/inexistente", headers={"Authorization": "Bearer token"})
 
     assert response.status_code == 404
     assert response.get_json() == {"error": "Flag não encontrada"}
@@ -236,7 +246,8 @@ def test_get_flag_internal_error(client, app_module, monkeypatch):
     auth_ok(monkeypatch, app_module)
     app_module._mock_cursor.execute.side_effect = Exception("erro get")
 
-    response = client.get("/flags/feature-x", headers={"Authorization": "Bearer token"})
+    response = client.get(
+        "/flags/feature-x", headers={"Authorization": "Bearer token"})
 
     assert response.status_code == 500
     body = response.get_json()
@@ -259,9 +270,11 @@ def test_update_flag_no_fields(client, app_module, monkeypatch):
     )
 
     assert response.status_code == 400
-    assert response.get_json() == {
-        "error": "Pelo menos um campo ('description', 'is_enabled') é obrigatório"
-    }
+    expected_err = (
+        "Pelo menos um campo "
+        "('description', 'is_enabled') é obrigatório"
+    )
+    assert response.get_json() == {"error": expected_err}
 
 
 def test_update_flag_success(client, app_module, monkeypatch):
@@ -322,7 +335,8 @@ def test_delete_flag_success(client, app_module, monkeypatch):
 
     app_module._mock_cursor.rowcount = 1
 
-    response = client.delete("/flags/feature-x", headers={"Authorization": "Bearer token"})
+    response = client.delete(
+        "/flags/feature-x", headers={"Authorization": "Bearer token"})
 
     assert response.status_code == 204
     assert response.data == b""
@@ -334,7 +348,8 @@ def test_delete_flag_not_found(client, app_module, monkeypatch):
 
     app_module._mock_cursor.rowcount = 0
 
-    response = client.delete("/flags/inexistente", headers={"Authorization": "Bearer token"})
+    response = client.delete(
+        "/flags/inexistente", headers={"Authorization": "Bearer token"})
 
     assert response.status_code == 404
     assert response.get_json() == {"error": "Flag não encontrada"}
@@ -344,7 +359,8 @@ def test_delete_flag_internal_error(client, app_module, monkeypatch):
     auth_ok(monkeypatch, app_module)
     app_module._mock_cursor.execute.side_effect = Exception("erro delete")
 
-    response = client.delete("/flags/feature-x", headers={"Authorization": "Bearer token"})
+    response = client.delete(
+        "/flags/feature-x", headers={"Authorization": "Bearer token"})
 
     assert response.status_code == 500
     body = response.get_json()
