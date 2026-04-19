@@ -60,7 +60,7 @@ jobs:
       - name: Rodar testes com cobertura
         env:
           DATABASE_URL: postgresql://user:pass@localhost:5432/testdb
-          AUTH_SERVICE_URL: http://flag-service
+          AUTH_SERVICE_URL: http://auth-service
           PYTHONPATH: .
         run: |
           pytest \
@@ -234,9 +234,9 @@ jobs:
         with:
           context: .
           push: true
+          provenance: false
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
