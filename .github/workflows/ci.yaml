@@ -134,10 +134,10 @@ jobs:
         run: |
           bandit -r . \
             -x ./.venv,./tests,./__pycache__,./.pytest_cache \
-            --severity-level high \
-            --exit-zero-on-skipped
+            --severity-level high
 
       - name: Scan de filesystem com Trivy
+        if: always()
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: fs
@@ -148,7 +148,7 @@ jobs:
           output: trivy-fs-results.sarif
 
       - name: Upload resultado Trivy para GitHub Security
-        if: always()
+        if: always() && hashFiles('trivy-fs-results.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-fs-results.sarif
