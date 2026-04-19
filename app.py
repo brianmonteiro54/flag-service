@@ -55,14 +55,16 @@ def require_auth(f):
 
             if response.status_code != 200:
                 log.warning(
-                    f"Falha na validação da chave (status: {response.status_code})")
+                    f"Falha na validação da chave "
+                    f"(status: {response.status_code})")
                 return jsonify({"error": "Chave de API inválida"}), 401
 
         except requests.exceptions.Timeout:
             log.error("Timeout ao conectar com o auth-service")
             # Gateway Timeout
             return jsonify(
-                {"error": "Serviço de autenticação indisponível (timeout)"}), 504
+                {"error": "Serviço de autenticação"
+                          " indisponível (timeout)"}), 504
         except requests.exceptions.RequestException as e:
             log.error(f"Erro ao conectar com o auth-service: {e}")
             # Service Unavailable
@@ -99,7 +101,8 @@ def create_flag():
         conn = pool.getconn()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
-            "INSERT INTO flags (name, description, is_enabled, created_at, updated_at) "
+            "INSERT INTO flags "
+            "(name, description, is_enabled, created_at, updated_at) "
             "VALUES (%s, %s, %s, NOW(), NOW()) RETURNING *",
             (name, description, is_enabled)
         )
@@ -194,11 +197,15 @@ def update_flag(name):
 
     if not fields:
         return jsonify(
-            {"error": "Pelo menos um campo ('description', 'is_enabled') é obrigatório"}), 400
+            {"error": "Pelo menos um campo "
+                      "('description', 'is_enabled') é obrigatório"}), 400
 
     values.append(name)  # Adiciona o 'name' para a cláusula WHERE
 
-    query = f"UPDATE flags SET {', '.join(fields)} WHERE name = %s RETURNING *"  # nosec B608
+    set_clause = ", ".join(fields)
+    query = (  # nosec B608
+        f"UPDATE flags SET {set_clause} WHERE name = %s RETURNING *"
+    )
 
     conn = None
     cur = None
