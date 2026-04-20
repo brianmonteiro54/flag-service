@@ -1,7 +1,7 @@
 import importlib
 import sys
 from unittest.mock import MagicMock
-
+import prometheus_client
 import pytest
 import requests
 
