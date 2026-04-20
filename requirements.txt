@@ -9,3 +9,4 @@ opentelemetry-exporter-otlp==1.41.0
 opentelemetry-instrumentation-flask==0.62b0
 opentelemetry-instrumentation-requests==0.62b0
 opentelemetry-instrumentation-psycopg2==0.62b0
+prometheus-flask-exporter==0.23.2

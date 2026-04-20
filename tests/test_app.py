@@ -1,7 +1,7 @@
 import importlib
 import sys
 from unittest.mock import MagicMock
-
+import prometheus_client
 import pytest
 import requests
 
@@ -22,8 +22,8 @@ def app_module(monkeypatch):
 
     mock_pool.getconn.return_value = mock_conn
     mock_conn.cursor.return_value = mock_cursor
+    prometheus_client.REGISTRY = prometheus_client.CollectorRegistry()
 
-    # remove o módulo do cache para reimportar com os patches aplicados
     if "app" in sys.modules:
         del sys.modules["app"]
 
