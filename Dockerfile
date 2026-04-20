@@ -53,7 +53,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
 # ===== Configuração OpenTelemetry via variáveis de ambiente =====
 ENV OTEL_SERVICE_NAME="flag-service" \
     OTEL_RESOURCE_ATTRIBUTES="service.namespace=togglemaster,deployment.environment=production,service.version=1.0.0" \
-    OTEL_EXPORTER_OTLP_ENDPOINT="http://otel-collector.monitoring.svc.cluster.local:4317" \
+    OTEL_EXPORTER_OTLP_ENDPOINT="otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4317" \
     OTEL_EXPORTER_OTLP_PROTOCOL="grpc" \
     OTEL_TRACES_EXPORTER="otlp" \
     OTEL_METRICS_EXPORTER="otlp" \
