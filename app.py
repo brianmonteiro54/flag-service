@@ -8,6 +8,7 @@ from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 from functools import wraps
 import logging
+from prometheus_flask_exporter import PrometheusMetrics
 
 # Configura o logging
 logging.basicConfig(level=logging.INFO)
