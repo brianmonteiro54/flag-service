@@ -20,7 +20,7 @@ load_dotenv()
 app = Flask(__name__)
 
 metrics = PrometheusMetrics(app)
-metrics.info('app_info', 'Application info', version='1.0.0')
+metrics.info("app_info", "Application info", version="1.0.0")
 
 # --- Configuração ---
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -43,7 +43,8 @@ except psycopg2.OperationalError as e:
 
 
 def require_auth(f):
-    """ Middleware para validar a chave de API contra o auth-service """
+    """Middleware para validar a chave de API contra o auth-service"""
+
     @wraps(f)
     def decorated(*args, **kwargs):
         auth_header = request.headers.get("Authorization")
@@ -54,50 +55,52 @@ def require_auth(f):
             # Chama o /validate do auth-service
             validate_url = f"{AUTH_SERVICE_URL}/validate"
             response = requests.get(
-                validate_url, headers={
-                    "Authorization": auth_header}, timeout=3)
+                validate_url, headers={"Authorization": auth_header}, timeout=3
+            )
 
             if response.status_code != 200:
                 log.warning(
-                    f"Falha na validação da chave "
-                    f"(status: {response.status_code})")
+                    f"Falha na validação da chave " f"(status: {response.status_code})"
+                )
                 return jsonify({"error": "Chave de API inválida"}), 401
 
         except requests.exceptions.Timeout:
             log.error("Timeout ao conectar com o auth-service")
             # Gateway Timeout
-            return jsonify(
-                {"error": "Serviço de autenticação"
-                          " indisponível (timeout)"}), 504
+            return (
+                jsonify({"error": "Serviço de autenticação" " indisponível (timeout)"}),
+                504,
+            )
         except requests.exceptions.RequestException as e:
             log.error(f"Erro ao conectar com o auth-service: {e}")
             # Service Unavailable
-            return jsonify(
-                {"error": "Serviço de autenticação indisponível"}), 503
+            return jsonify({"error": "Serviço de autenticação indisponível"}), 503
 
         # Se a chave for válida, continua para a rota
         return f(*args, **kwargs)
+
     return decorated
+
 
 # --- Endpoints da API ---
 
 
-@app.route('/health')
+@app.route("/health")
 def health():
     return jsonify({"status": "ok"})
 
 
-@app.route('/flags', methods=['POST'])
+@app.route("/flags", methods=["POST"])
 @require_auth
 def create_flag():
-    """ Cria uma nova definição de feature flag """
+    """Cria uma nova definição de feature flag"""
     data = request.get_json()
-    if not data or 'name' not in data:
+    if not data or "name" not in data:
         return jsonify({"error": "'name' é obrigatório"}), 400
 
-    name = data['name']
-    description = data.get('description', '')
-    is_enabled = data.get('is_enabled', False)
+    name = data["name"]
+    description = data.get("description", "")
+    is_enabled = data.get("is_enabled", False)
 
     conn = None
     cur = None
@@ -108,7 +111,7 @@ def create_flag():
             "INSERT INTO flags "
             "(name, description, is_enabled, created_at, updated_at) "
             "VALUES (%s, %s, %s, NOW(), NOW()) RETURNING *",
-            (name, description, is_enabled)
+            (name, description, is_enabled),
         )
         new_flag = cur.fetchone()
         conn.commit()
@@ -123,8 +126,7 @@ def create_flag():
         if conn:
             conn.rollback()
         log.error(f"Erro ao criar flag: {e}")
-        return jsonify(
-            {"error": "Erro interno do servidor", "details": str(e)}), 500
+        return jsonify({"error": "Erro interno do servidor", "details": str(e)}), 500
     finally:
         if cur:
             cur.close()
@@ -132,10 +134,10 @@ def create_flag():
             pool.putconn(conn)
 
 
-@app.route('/flags', methods=['GET'])
+@app.route("/flags", methods=["GET"])
 @require_auth
 def get_flags():
-    """ Lista todas as feature flags """
+    """Lista todas as feature flags"""
     conn = None
     cur = None
     try:
@@ -146,8 +148,7 @@ def get_flags():
         return jsonify(flags)
     except Exception as e:
         log.error(f"Erro ao buscar flags: {e}")
-        return jsonify(
-            {"error": "Erro interno do servidor", "details": str(e)}), 500
+        return jsonify({"error": "Erro interno do servidor", "details": str(e)}), 500
     finally:
         if cur:
             cur.close()
@@ -155,10 +156,10 @@ def get_flags():
             pool.putconn(conn)
 
 
-@app.route('/flags/<string:name>', methods=['GET'])
+@app.route("/flags/<string:name>", methods=["GET"])
 @require_auth
 def get_flag(name):
-    """ Busca uma feature flag específica pelo nome """
+    """Busca uma feature flag específica pelo nome"""
     conn = None
     cur = None
     try:
@@ -171,8 +172,7 @@ def get_flag(name):
         return jsonify(flag)
     except Exception as e:
         log.error(f"Erro ao buscar flag '{name}': {e}")
-        return jsonify(
-            {"error": "Erro interno do servidor", "details": str(e)}), 500
+        return jsonify({"error": "Erro interno do servidor", "details": str(e)}), 500
     finally:
         if cur:
             cur.close()
@@ -180,10 +180,10 @@ def get_flag(name):
             pool.putconn(conn)
 
 
-@app.route('/flags/<string:name>', methods=['PUT'])
+@app.route("/flags/<string:name>", methods=["PUT"])
 @require_auth
 def update_flag(name):
-    """ Atualiza uma feature flag (descrição ou status 'is_enabled') """
+    """Atualiza uma feature flag (descrição ou status 'is_enabled')"""
     data = request.get_json()
     if not data:
         return jsonify({"error": "Corpo da requisição obrigatório"}), 400
@@ -192,24 +192,28 @@ def update_flag(name):
     values = []
 
     # Constrói a query dinamicamente
-    if 'description' in data:
+    if "description" in data:
         fields.append("description = %s")
-        values.append(data['description'])
-    if 'is_enabled' in data:
+        values.append(data["description"])
+    if "is_enabled" in data:
         fields.append("is_enabled = %s")
-        values.append(data['is_enabled'])
+        values.append(data["is_enabled"])
 
     if not fields:
-        return jsonify(
-            {"error": "Pelo menos um campo "
-                      "('description', 'is_enabled') é obrigatório"}), 400
+        return (
+            jsonify(
+                {
+                    "error": "Pelo menos um campo "
+                    "('description', 'is_enabled') é obrigatório"
+                }
+            ),
+            400,
+        )
 
     values.append(name)  # Adiciona o 'name' para a cláusula WHERE
 
     set_clause = ", ".join(fields)
-    query = (  # nosec B608
-        f"UPDATE flags SET {set_clause} WHERE name = %s RETURNING *"
-    )
+    query = f"UPDATE flags SET {set_clause} WHERE name = %s RETURNING *"  # nosec B608
 
     conn = None
     cur = None
@@ -229,8 +233,7 @@ def update_flag(name):
         if conn:
             conn.rollback()
         log.error(f"Erro ao atualizar flag '{name}': {e}")
-        return jsonify(
-            {"error": "Erro interno do servidor", "details": str(e)}), 500
+        return jsonify({"error": "Erro interno do servidor", "details": str(e)}), 500
     finally:
         if cur:
             cur.close()
@@ -238,10 +241,10 @@ def update_flag(name):
             pool.putconn(conn)
 
 
-@app.route('/flags/<string:name>', methods=['DELETE'])
+@app.route("/flags/<string:name>", methods=["DELETE"])
 @require_auth
 def delete_flag(name):
-    """ Deleta uma feature flag """
+    """Deleta uma feature flag"""
     conn = None
     cur = None
     try:
@@ -259,8 +262,7 @@ def delete_flag(name):
         if conn:
             conn.rollback()
         log.error(f"Erro ao deletar flag '{name}': {e}")
-        return jsonify(
-            {"error": "Erro interno do servidor", "details": str(e)}), 500
+        return jsonify({"error": "Erro interno do servidor", "details": str(e)}), 500
     finally:
         if cur:
             cur.close()
@@ -268,6 +270,6 @@ def delete_flag(name):
             pool.putconn(conn)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     port = int(os.getenv("PORT", 8002))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False)
